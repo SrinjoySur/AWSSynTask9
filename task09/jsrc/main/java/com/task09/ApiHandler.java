@@ -19,7 +19,7 @@ import java.util.function.Function;
 @LambdaHandler(
     lambdaName = "api_handler",
 	roleName = "api_handler-role",
-	isPublishVersion = true,
+	isPublishVersion = false,
 	aliasName = "${lambdas_alias_name}",
 	logsExpiration = RetentionSetting.SYNDICATE_ALIASES_SPECIFIED
 )
