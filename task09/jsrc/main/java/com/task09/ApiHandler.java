@@ -13,8 +13,10 @@ import com.syndicate.deployment.model.lambda.url.AuthType;
 import com.syndicate.deployment.model.lambda.url.InvokeMode;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
-import java.util.function.Function;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 @LambdaHandler(
     lambdaName = "api_handler",
@@ -34,65 +36,45 @@ import java.util.function.Function;
 		invokeMode = InvokeMode.BUFFERED
 )
 public class ApiHandler implements RequestHandler<Map<String , Object>, Map<String, Object>> {
+	private static final String OPEN_METEO_API_URL = "https://api.open-meteo.com/v1/forecast";
 
-	public Map<String, Object> handleRequest(Map<String , Object> event, Context context) {
+	public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
 		System.out.println("Handling request for /weather endpoint");
+
 		String path = (String) event.getOrDefault("rawPath", event.get("path"));
-		Map<String, Object> requestContext = (Map<String, Object>) event.get("requestContext");
-		Map<String, Object> http = requestContext != null ? (Map<String, Object>) requestContext.get("http") : null;
-		String method = http != null ? (String) http.get("method") : (String) event.get("httpMethod");
+		String method = (String) event.getOrDefault("httpMethod", "GET");
 
 		if ("/weather".equals(path) && "GET".equalsIgnoreCase(method)) {
-			return createWeatherResponse();
+			return fetchWeatherData();
 		} else {
 			return createErrorResponse("Bad request syntax or unsupported method. Request path: " + path + ". HTTP method: " + method);
 		}
 	}
-	private Map<String, Object> createWeatherResponse() {
-		Map<String, Object> body = new HashMap<>();
-		body.put("latitude", 50.4375);
-		body.put("longitude", 30.5);
-		body.put("generationtime_ms", 0.025033950805664062);
-		body.put("utc_offset_seconds", 7200);
-		body.put("timezone", "Europe/Kiev");
-		body.put("timezone_abbreviation", "EET");
-		body.put("elevation", 188.0);
 
-		body.put("hourly_units", Map.of(
-				"time", "iso8601",
-				"temperature_2m", "°C",
-				"relative_humidity_2m", "%",
-				"wind_speed_10m", "km/h"
-		));
+	private Map<String, Object> fetchWeatherData() {
+		try {
+			// Configure the HTTP request to Open-Meteo API
+			HttpClient client = HttpClient.newHttpClient();
+			HttpRequest request = HttpRequest.newBuilder()
+					.uri(URI.create(OPEN_METEO_API_URL + "?latitude=50.4375&longitude=30.5&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m"))
+					.GET()
+					.build();
 
-		body.put("hourly", Map.of(
-				"time", new String[]{"2023-12-04T00:00", "2023-12-04T01:00", "2023-12-04T02:00", "..."},
-				"temperature_2m", new Object[]{-2.4, -2.8, -3.2, "..."},
-				"relative_humidity_2m", new Object[]{84, 85, 87, "..."},
-				"wind_speed_10m", new Object[]{7.6, 6.8, 5.6, "..."}
-		));
+			// Send the HTTP request and get the response
+			HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-		body.put("current_units", Map.of(
-				"time", "iso8601",
-				"interval", "seconds",
-				"temperature_2m", "°C",
-				"wind_speed_10m", "km/h"
-		));
+			// Parse and return the response
+			Map<String, Object> result = new HashMap<>();
+			result.put("statusCode", 200);
+			result.put("headers", Map.of("Content-Type", "application/json"));
+			result.put("body", response.body());
+			result.put("isBase64Encoded", false);
 
-		body.put("current", Map.of(
-				"time", "2023-12-04T07:00",
-				"interval", 900,
-				"temperature_2m", 0.2,
-				"wind_speed_10m", 10.0
-		));
-
-		Map<String, Object> response = new HashMap<>();
-		response.put("statusCode", 200);
-		response.put("headers", Map.of("Content-Type", "application/json"));
-		response.put("body", body);
-		response.put("isBase64Encoded", false);
-
-		return response;
+			return result;
+		} catch (Exception e) {
+			e.printStackTrace();
+			return createErrorResponse("Failed to fetch weather data: " + e.getMessage());
+		}
 	}
 
 	private Map<String, Object> createErrorResponse(String message) {
